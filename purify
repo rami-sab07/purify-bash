@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+readonly SCRIPT_NAME="${0##*/}"
+readonly MODEL_NAME="Kim_Vocal_2.onnx"
+readonly SUPPORTED_EXTENSIONS="avi|flac|m4a|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|opus|wav|webm"
+WORKSPACE=""
+SELECTED_STREAM=""
+
+if [[ -t 1 ]]; then
+  readonly BLUE=$'\033[1;34m'
+  readonly GREEN=$'\033[1;32m'
+  readonly RED=$'\033[1;31m'
+  readonly RESET=$'\033[0m'
+else
+  readonly BLUE=""
+  readonly GREEN=""
+  readonly RED=""
+  readonly RESET=""
+fi
+
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME PATH_OR_URL [...]
+
+Remove music from local media files, directories, YouTube videos, and playlists.
+Generated files are written beside their source with a " (Purified)" suffix.
+
+Options:
+  -r, --recursive  Search directories and their subdirectories.
+  -h, --help       Show this help message.
+EOF
+}
+
+status() {
+  printf '%s%s%s\n' "$BLUE" "$*" "$RESET"
+}
+
+fail() {
+  printf '%sError: %s%s\n' "$RED" "$*" "$RESET" >&2
+  return 1
+}
+
+is_url() {
+  [[ "$1" =~ ^https?:// ]]
+}
+
+is_supported_media() {
+  [[ "$1" =~ \.($SUPPORTED_EXTENSIONS)$ ]]
+}
+
+require_commands() {
+  local command_name
+  for command_name in yt-dlp ffmpeg ffprobe audio-separator; do
+    command -v "$command_name" >/dev/null 2>&1 ||
+      fail "'$command_name' is required but was not found on PATH."
+  done
+}
+
+download_url() {
+  local url=$1
+  status "Fetching $url" >&2
+  yt-dlp \
+    --quiet \
+    --no-warnings \
+    --restrict-filenames \
+    --no-overwrites \
+    -o '%(title)s [%(id)s].%(ext)s' \
+    --print after_move:filepath \
+    "$url"
+}
+
+collect_local_files() {
+  local input=$1
+  local recursive=$2
+  local file
+
+  if [[ -f "$input" ]]; then
+    is_supported_media "${input,,}" && printf '%s\n' "$input"
+    return 0
+  fi
+
+  if [[ -d "$input" ]]; then
+    if [[ "$recursive" == true ]]; then
+      while IFS= read -r -d '' file; do
+        [[ "$file" == *" (Purified)"* ]] && continue
+        is_supported_media "${file,,}" && printf '%s\n' "$file"
+      done < <(find "$input" -type f -print0)
+    else
+      while IFS= read -r -d '' file; do
+        [[ "$file" == *" (Purified)"* ]] && continue
+        is_supported_media "${file,,}" && printf '%s\n' "$file"
+      done < <(find "$input" -maxdepth 1 -type f -print0)
+    fi
+    return 0
+  fi
+
+  fail "Input does not exist: $input"
+}
+
+select_audio_stream() {
+  local source=$1
+  local -a audio_streams
+  local stream_number
+  local selection
+
+  mapfile -t audio_streams < <(
+    ffprobe -v error -select_streams a \
+      -show_entries stream=index \
+      -of csv=p=0 "$source"
+  )
+  ((${#audio_streams[@]} > 0)) ||
+    fail "No audio stream was found in '$source'."
+
+  if ((${#audio_streams[@]} == 1)); then
+    SELECTED_STREAM=${audio_streams[0]}
+    return 0
+  fi
+
+  printf 'Multiple audio streams found in %s:\n' "$source"
+  for stream_number in "${!audio_streams[@]}"; do
+    printf '  %d) stream %s\n' "$((stream_number + 1))" "${audio_streams[stream_number]}"
+  done
+
+  while true; do
+    read -r -p "Select an audio stream [1-${#audio_streams[@]}]: " selection ||
+      fail "Audio stream selection was cancelled."
+    if [[ "$selection" =~ ^[0-9]+$ ]] &&
+      ((selection >= 1 && selection <= ${#audio_streams[@]})); then
+      SELECTED_STREAM=${audio_streams[selection - 1]}
+      return 0
+    fi
+    printf 'Please enter a number from 1 to %d.\n' "${#audio_streams[@]}" >&2
+  done
+}
+
+output_path_for() {
+  local source=$1
+  local directory filename stem extension candidate suffix counter
+  directory=$(dirname "$source")
+  filename=$(basename "$source")
+  stem=${filename%.*}
+  extension=${filename##*.}
+  candidate="$directory/$stem (Purified).$extension"
+  counter=2
+
+  while [[ -e "$candidate" ]]; do
+    candidate="$directory/$stem (Purified $counter).$extension"
+    ((counter++))
+  done
+  printf '%s\n' "$candidate"
+}
+
+find_vocals_stem() {
+  local workspace=$1
+  local stem
+  while IFS= read -r -d '' stem; do
+    printf '%s\n' "$stem"
+    return 0
+  done < <(find "$workspace" -type f \( -iname '*vocals*.wav' -o -iname '*vocal*.wav' \) -print0)
+  fail "audio-separator did not produce a Vocals WAV stem."
+}
+
+audio_codec_for() {
+  case "${1,,}" in
+    mp3) printf '%s\n' libmp3lame ;;
+    flac) printf '%s\n' flac ;;
+    wav) printf '%s\n' pcm_s16le ;;
+    ogg|opus|webm) printf '%s\n' libopus ;;
+    *) printf '%s\n' aac ;;
+  esac
+}
+
+cleanup() {
+  if [[ -n "$WORKSPACE" && -d "$WORKSPACE" ]]; then
+    rm -rf -- "$WORKSPACE"
+    WORKSPACE=""
+  fi
+}
+
+trap cleanup EXIT
+
+process_media() {
+  local source=$1
+  local vocals output extension codec stream_number
+  local -a audio_count disposition_args
+
+  [[ -f "$source" ]] || {
+    printf 'Skipping missing downloaded file: %s\n' "$source" >&2
+    return 0
+  }
+  is_supported_media "${source,,}" || return 0
+
+  WORKSPACE=$(mktemp -d "${TMPDIR:-/tmp}/purify.XXXXXX")
+
+  status "Inspecting $source"
+  select_audio_stream "$source"
+  status "Extracting audio"
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$source" -map "0:$SELECTED_STREAM" -vn -acodec pcm_s16le \
+    "$WORKSPACE/input.wav"
+
+  status "Separating vocals"
+  audio-separator "$WORKSPACE/input.wav" \
+    --model_filename "$MODEL_NAME" \
+    --output_dir "$WORKSPACE" \
+    --output_format WAV \
+    --mdx_params '{"batch_size": 4}' \
+    --log_level ERROR \
+    --output_single_stem Vocals
+  vocals=$(find_vocals_stem "$WORKSPACE")
+  output=$(output_path_for "$source")
+
+  if ffprobe -v error -select_streams v:0 -show_entries stream=index \
+    -of csv=p=0 "$source" | grep -q .; then
+    mapfile -t audio_count < <(
+      ffprobe -v error -select_streams a \
+        -show_entries stream=index -of csv=p=0 "$source"
+    )
+    disposition_args=()
+    for ((stream_number = 0; stream_number < ${#audio_count[@]}; stream_number++)); do
+      disposition_args+=("-disposition:a:$stream_number" "0")
+    done
+    disposition_args+=("-disposition:a:${#audio_count[@]}" "default")
+
+    extension=${source##*.}
+    if [[ "${extension,,}" == "webm" ]]; then
+      codec=libopus
+    else
+      codec=aac
+    fi
+    status "Merging purified audio into video"
+    ffmpeg -hide_banner -loglevel error -y \
+      -i "$source" -i "$vocals" \
+      -map 0:v? -map 0:a? -map 1:a:0 \
+      -map_metadata 0 -c:v copy -c:a "$codec" -b:a 192k \
+      "${disposition_args[@]}" "$output"
+  else
+    codec=$(audio_codec_for "${source##*.}")
+    status "Encoding purified audio"
+    ffmpeg -hide_banner -loglevel error -y \
+      -i "$vocals" -map 0:a:0 -c:a "$codec" "$output"
+  fi
+
+  printf '%sCreated %s%s\n' "$GREEN" "$output" "$RESET"
+  cleanup
+}
+
+main() {
+  local input file recursive=false
+  local -a files
+
+  if (($# == 0)); then
+    usage >&2
+    return 2
+  fi
+  while (($# > 0)); do
+    case "$1" in
+      -h|--help)
+        usage
+        return 0
+        ;;
+      -r|--recursive)
+        recursive=true
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        fail "Unknown option: $1"
+        return 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+  (($# > 0)) || {
+    usage >&2
+    return 2
+  }
+
+  require_commands
+  for input in "$@"; do
+    if is_url "$input"; then
+      while IFS= read -r file; do
+        [[ -n "$file" ]] && files+=("$file")
+      done < <(download_url "$input")
+    else
+      while IFS= read -r file; do
+        [[ -n "$file" ]] && files+=("$file")
+      done < <(collect_local_files "$input" "$recursive")
+    fi
+  done
+
+  ((${#files[@]} > 0)) || fail "No supported media files were found."
+  for file in "${files[@]}"; do
+    process_media "$file"
+  done
+}
+
+main "$@"

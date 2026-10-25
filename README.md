@@ -27,7 +27,20 @@ This project provides a bash script that combines [yt-dlp](https://github.com/yt
 
 Given the limited resources I currently have, a bash script is the easiest [MVP](https://en.wikipedia.org/wiki/Minimum_viable_product) I can provide. I would love to see more cross-platform friendly, and non tech-savvy users friend solutions being made and inspired from this.
 
-## Example Usages
+## Installation
+
+Clone the repository and place the script somewhere on your `PATH`:
+
+```sh
+git clone https://github.com/rami-sabbagh/purify-bash.git
+cd purify-bash
+chmod +x purify
+sudo install -m 0755 purify /usr/local/bin/purify
+```
+
+The script requires Bash 4 or newer.
+
+## Example Usage
 
 ```sh
 # Local video file
@@ -40,8 +53,10 @@ purify ./an-audio-file.mp4
 
 # A directory of local video and/or audio files
 purify ./video-series
-# All the videos and/or audio files in the current working directory
+# Files directly in the current working directory
 purify .
+# Recursively process a directory and its subdirectories
+purify --recursive ./video-series
 
 # A YouTube video
 purify https://www.youtube.com/watch?v=XfeuCfOUuXg
@@ -50,9 +65,29 @@ purify https://www.youtube.com/watch?v=XfeuCfOUuXg
 purify https://www.youtube.com/playlist?list=PLZHQObOWTQDMV832OM2s0zRjsgphR5UJR
 ```
 
+Pass multiple files, directories, and URLs in one invocation. Directories are
+searched only at their top level by default. Use `--recursive` (or `-r`) to
+include subdirectories. Existing purified files are skipped, and if an output
+already exists, a numbered suffix is used instead of overwriting it.
+
+When a source has multiple audio tracks, `purify` displays the available
+stream indexes and prompts for the track to process.
+
 ## Requirements
 
 - `yt-dlp`, `ffmpeg`, `ffprobe` and `audio-separator` must be available on path.
+- The `audio-separator` model `Kim_Vocal_2.onnx` is downloaded by
+  `audio-separator` when it is not already available.
+
+## Checking the Installation
+
+Run the following commands to verify the script and display its command-line
+help without processing a media file:
+
+```sh
+bash -n purify
+purify --help
+```
 
 ## Processing Pipeline
 
