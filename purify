@@ -33,6 +33,7 @@ Generated files are written beside their source with a " (Purified)" suffix.
 Options:
   -r, --recursive  Search directories and their subdirectories.
   -o, --override   Replace local input files after successful processing.
+  -q, --quality    Maximum video height to download (default: 720p).
       --mpv        Open each result in MPV after successful processing.
   -h, --help       Show this help message.
 EOF
@@ -70,6 +71,7 @@ require_commands() {
 
 download_url() {
   local url=$1
+  local quality=$2
   local printed_path file
   printed_path=$(mktemp "${TMPDIR:-/tmp}/purify-download.XXXXXX")
   status "Fetching $url" >&2
@@ -78,6 +80,7 @@ download_url() {
       --no-warnings \
       --restrict-filenames \
       --no-overwrites \
+      --format "bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]" \
       -o '%(title)s [%(id)s].%(ext)s' \
       --print-to-file after_move:filepath "$printed_path" \
       "$url" 1>&2; then
@@ -309,7 +312,7 @@ process_media() {
 }
 
 main() {
-  local input file recursive=false override=false launch_mpv_after=false
+  local input file quality=720 recursive=false override=false launch_mpv_after=false
   local -a files=()
   declare -A replace_original=()
 
@@ -330,6 +333,18 @@ main() {
       -o|--override)
         override=true
         shift
+        ;;
+      -q|--quality)
+        if (($# < 2)); then
+          fail "Option $1 requires a value."
+          return 2
+        fi
+        quality=${2%p}
+        [[ "$quality" =~ ^[1-9][0-9]*$ ]] || {
+          fail "Invalid video quality: $2"
+          return 2
+        }
+        shift 2
         ;;
       --mpv)
         launch_mpv_after=true
@@ -361,7 +376,7 @@ main() {
           files+=("$file")
           replace_original["$file"]=true
         fi
-      done < <(download_url "$input")
+      done < <(download_url "$input" "$quality")
     else
       while IFS= read -r file; do
         if [[ -n "$file" ]]; then

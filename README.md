@@ -131,6 +131,7 @@ tracks and prompts you to choose one.
 ```text
 -r, --recursive  Search directories and their subdirectories.
 -o, --override   Replace local input files after successful processing.
+-q, --quality    Maximum video height to download (default: 720p).
     --mpv        Open each result in MPV after successful processing.
 -h, --help       Show the help message.
 ```
