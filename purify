@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -Eeuo pipefail
+set -euo pipefail
 IFS=$'\n\t'
 
 readonly SCRIPT_NAME="${0##*/}"
@@ -10,6 +10,7 @@ WORKSPACE=""
 SELECTED_STREAM=""
 SELECTED_STREAM_TITLE=""
 OUTPUT_TEMP=""
+VERBOSE=false
 
 if [[ -t 1 ]]; then
   readonly BLUE=$'\033[1;34m'
@@ -34,6 +35,7 @@ Options:
   -r, --recursive  Search directories and their subdirectories.
   -o, --override   Replace local input files after successful processing.
   -q, --quality    Maximum video height to download (default: 720p).
+  -v, --verbose    Show detailed output from each processing stage.
       --mpv        Open each result in MPV after successful processing.
   -h, --help       Show this help message.
 EOF
@@ -60,12 +62,16 @@ require_commands() {
   local launch_mpv=$1
   local command_name
   for command_name in yt-dlp ffmpeg ffprobe audio-separator; do
-    command -v "$command_name" >/dev/null 2>&1 ||
+    command -v "$command_name" >/dev/null 2>&1 || {
       fail "'$command_name' is required but was not found on PATH."
+      return 1
+    }
   done
   if [[ "$launch_mpv" == true ]]; then
-    command -v mpv >/dev/null 2>&1 ||
+    command -v mpv >/dev/null 2>&1 || {
       fail "'mpv' is required when using --mpv but was not found on PATH."
+      return 1
+    }
   fi
 }
 
@@ -73,11 +79,13 @@ download_url() {
   local url=$1
   local quality=$2
   local printed_path file
+  local -a logging_args=(--no-warnings)
   printed_path=$(mktemp "${TMPDIR:-/tmp}/purify-download.XXXXXX")
+  [[ "$VERBOSE" == true ]] && logging_args=(--verbose)
   status "Fetching $url" >&2
   if ! yt-dlp \
       --progress \
-      --no-warnings \
+      "${logging_args[@]}" \
       --restrict-filenames \
       --no-overwrites \
       --format "bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]" \
@@ -97,7 +105,6 @@ collect_local_files() {
   local input=$1
   local recursive=$2
   local file
-
   if [[ -f "$input" ]]; then
     is_supported_media "${input,,}" && printf '%s\n' "$input"
     return 0
@@ -230,6 +237,7 @@ process_media() {
   local replace_original=$2
   local launch_mpv_after=$3
   local vocals output result extension codec stream_number
+  local ffmpeg_log_level=warning separator_log_level=error
   local -a audio_count disposition_args
 
   [[ -f "$source" ]] || {
@@ -239,11 +247,15 @@ process_media() {
   is_supported_media "${source,,}" || return 0
 
   WORKSPACE=$(mktemp -d "${TMPDIR:-/tmp}/purify.XXXXXX")
+  if [[ "$VERBOSE" == true ]]; then
+    ffmpeg_log_level=info
+    separator_log_level=info
+  fi
 
   status "Inspecting $source"
   select_audio_stream "$source"
   status "Extracting audio"
-  ffmpeg -hide_banner -loglevel warning -stats -y \
+  ffmpeg -hide_banner -loglevel "$ffmpeg_log_level" -stats -y \
     -i "$source" -map "0:$SELECTED_STREAM" -vn -acodec pcm_s16le \
     "$WORKSPACE/input.wav"
 
@@ -253,7 +265,7 @@ process_media() {
     --output_dir "$WORKSPACE" \
     --output_format WAV \
     --mdx_batch_size 4 \
-    --log_level error \
+    --log_level "$separator_log_level" \
     --single_stem Vocals
   vocals=$(find_vocals_stem "$WORKSPACE")
   if [[ "$replace_original" == true ]]; then
@@ -284,7 +296,7 @@ process_media() {
       codec=aac
     fi
     status "Merging purified audio into video"
-    ffmpeg -hide_banner -loglevel warning -stats -y \
+    ffmpeg -hide_banner -loglevel "$ffmpeg_log_level" -stats -y \
       -i "$source" -i "$vocals" \
       -map 0:v? -map 0:a? -map 1:a:0 \
       -map_metadata 0 -c:v copy -c:a "$codec" -b:a 192k \
@@ -294,7 +306,7 @@ process_media() {
   else
     codec=$(audio_codec_for "${source##*.}")
     status "Encoding purified audio"
-    ffmpeg -hide_banner -loglevel warning -stats -y \
+    ffmpeg -hide_banner -loglevel "$ffmpeg_log_level" -stats -y \
       -i "$vocals" -map 0:a:0 -c:a "$codec" "$output"
   fi
 
@@ -345,6 +357,10 @@ main() {
           return 2
         }
         shift 2
+        ;;
+      -v|--verbose)
+        VERBOSE=true
+        shift
         ;;
       --mpv)
         launch_mpv_after=true

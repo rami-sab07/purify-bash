@@ -106,6 +106,9 @@ purify --override ./a-video-file.mkv
 # Open each result in MPV after successful processing
 purify --mpv ./a-video-file.mkv
 
+# Show detailed output from each processing stage
+purify --verbose ./a-video-file.mkv
+
 # A YouTube video
 purify https://www.youtube.com/watch?v=XfeuCfOUuXg
 
@@ -132,6 +135,7 @@ tracks and prompts you to choose one.
 -r, --recursive  Search directories and their subdirectories.
 -o, --override   Replace local input files after successful processing.
 -q, --quality    Maximum video height to download (default: 720p).
+-v, --verbose    Show detailed output from each processing stage.
     --mpv        Open each result in MPV after successful processing.
 -h, --help       Show the help message.
 ```
