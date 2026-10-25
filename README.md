@@ -50,6 +50,11 @@ purify https://www.youtube.com/watch?v=XfeuCfOUuXg
 purify https://www.youtube.com/playlist?list=PLZHQObOWTQDMV832OM2s0zRjsgphR5UJR
 ```
 
+## Requirements
+
+- `ffmpeg` and `ffprobe` should be installed and available on PATH.
+- `audio-separator` must be available on PATH.
+
 ## Processing Pipeline
 
 ### 1. Fetching the media file
