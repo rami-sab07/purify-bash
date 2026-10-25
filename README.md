@@ -52,8 +52,7 @@ purify https://www.youtube.com/playlist?list=PLZHQObOWTQDMV832OM2s0zRjsgphR5UJR
 
 ## Requirements
 
-- `ffmpeg` and `ffprobe` should be installed and available on PATH.
-- `audio-separator` must be available on PATH.
+- `yt-dlp`, `ffmpeg`, `ffprobe` and `audio-separator` must be available on path.
 
 ## Processing Pipeline
 
