@@ -238,7 +238,7 @@ process_media() {
   local replace_original=$2
   local launch_mpv_after=$3
   local vocals output result extension codec stream_number duration
-  local ffmpeg_log_level=warning separator_log_level=error
+  local ffmpeg_log_level=error separator_log_level=error
   local -a audio_count disposition_args separator_args
 
   [[ -f "$source" ]] || {
