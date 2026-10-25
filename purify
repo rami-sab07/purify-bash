@@ -8,6 +8,7 @@ readonly MODEL_NAME="Kim_Vocal_2.onnx"
 readonly SUPPORTED_EXTENSIONS="avi|flac|m4a|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|opus|wav|webm"
 WORKSPACE=""
 SELECTED_STREAM=""
+SELECTED_STREAM_TITLE=""
 
 if [[ -t 1 ]]; then
   readonly BLUE=$'\033[1;34m'
@@ -61,15 +62,24 @@ require_commands() {
 
 download_url() {
   local url=$1
+  local printed_path file
+  printed_path=$(mktemp "${TMPDIR:-/tmp}/purify-download.XXXXXX")
   status "Fetching $url" >&2
-  yt-dlp \
-    --quiet \
-    --no-warnings \
-    --restrict-filenames \
-    --no-overwrites \
-    -o '%(title)s [%(id)s].%(ext)s' \
-    --print after_move:filepath \
-    "$url"
+  if ! yt-dlp \
+      --progress \
+      --no-warnings \
+      --restrict-filenames \
+      --no-overwrites \
+      -o '%(title)s [%(id)s].%(ext)s' \
+      --print-to-file after_move:filepath "$printed_path" \
+      "$url" 1>&2; then
+    rm -f -- "$printed_path"
+    return 1
+  fi
+  while IFS= read -r file; do
+    [[ -f "$file" ]] && printf '%s\n' "$file"
+  done < "$printed_path"
+  rm -f -- "$printed_path"
 }
 
 collect_local_files() {
@@ -105,6 +115,7 @@ select_audio_stream() {
   local -a audio_streams
   local stream_number
   local selection
+  local selected_ordinal
 
   mapfile -t audio_streams < <(
     ffprobe -v error -select_streams a \
@@ -116,24 +127,35 @@ select_audio_stream() {
 
   if ((${#audio_streams[@]} == 1)); then
     SELECTED_STREAM=${audio_streams[0]}
-    return 0
+    selected_ordinal=0
+  else
+    printf 'Multiple audio streams found in %s:\n' "$source"
+    for stream_number in "${!audio_streams[@]}"; do
+      printf '  %d) stream %s\n' "$((stream_number + 1))" "${audio_streams[stream_number]}"
+    done
+
+    while true; do
+      read -r -p "Select an audio stream [1-${#audio_streams[@]}]: " selection ||
+        fail "Audio stream selection was cancelled."
+      if [[ "$selection" =~ ^[0-9]+$ ]] &&
+        ((selection >= 1 && selection <= ${#audio_streams[@]})); then
+        SELECTED_STREAM=${audio_streams[selection - 1]}
+        selected_ordinal=$((selection - 1))
+        break
+      fi
+      printf 'Please enter a number from 1 to %d.\n' "${#audio_streams[@]}" >&2
+    done
   fi
 
-  printf 'Multiple audio streams found in %s:\n' "$source"
-  for stream_number in "${!audio_streams[@]}"; do
-    printf '  %d) stream %s\n' "$((stream_number + 1))" "${audio_streams[stream_number]}"
-  done
-
-  while true; do
-    read -r -p "Select an audio stream [1-${#audio_streams[@]}]: " selection ||
-      fail "Audio stream selection was cancelled."
-    if [[ "$selection" =~ ^[0-9]+$ ]] &&
-      ((selection >= 1 && selection <= ${#audio_streams[@]})); then
-      SELECTED_STREAM=${audio_streams[selection - 1]}
-      return 0
-    fi
-    printf 'Please enter a number from 1 to %d.\n' "${#audio_streams[@]}" >&2
-  done
+  SELECTED_STREAM_TITLE=$(
+    ffprobe -v error -select_streams "a:$selected_ordinal" \
+      -show_entries stream_tags=title \
+      -of default=nw=1:nk=1 "$source"
+  )
+  if [[ -z "$SELECTED_STREAM_TITLE" || "$SELECTED_STREAM_TITLE" == "N/A" ]]; then
+    SELECTED_STREAM_TITLE="Audio"
+  fi
+  return 0
 }
 
 output_path_for() {
@@ -198,7 +220,7 @@ process_media() {
   status "Inspecting $source"
   select_audio_stream "$source"
   status "Extracting audio"
-  ffmpeg -hide_banner -loglevel error -y \
+  ffmpeg -hide_banner -loglevel warning -stats -y \
     -i "$source" -map "0:$SELECTED_STREAM" -vn -acodec pcm_s16le \
     "$WORKSPACE/input.wav"
 
@@ -207,9 +229,9 @@ process_media() {
     --model_filename "$MODEL_NAME" \
     --output_dir "$WORKSPACE" \
     --output_format WAV \
-    --mdx_params '{"batch_size": 4}' \
-    --log_level ERROR \
-    --output_single_stem Vocals
+    --mdx_batch_size 4 \
+    --log_level error \
+    --single_stem Vocals
   vocals=$(find_vocals_stem "$WORKSPACE")
   output=$(output_path_for "$source")
 
@@ -232,15 +254,17 @@ process_media() {
       codec=aac
     fi
     status "Merging purified audio into video"
-    ffmpeg -hide_banner -loglevel error -y \
+    ffmpeg -hide_banner -loglevel warning -stats -y \
       -i "$source" -i "$vocals" \
       -map 0:v? -map 0:a? -map 1:a:0 \
       -map_metadata 0 -c:v copy -c:a "$codec" -b:a 192k \
-      "${disposition_args[@]}" "$output"
+      "${disposition_args[@]}" \
+      -metadata:s:a:"${#audio_count[@]}" "title=${SELECTED_STREAM_TITLE} (Purified)" \
+      "$output"
   else
     codec=$(audio_codec_for "${source##*.}")
     status "Encoding purified audio"
-    ffmpeg -hide_banner -loglevel error -y \
+    ffmpeg -hide_banner -loglevel warning -stats -y \
       -i "$vocals" -map 0:a:0 -c:a "$codec" "$output"
   fi
 

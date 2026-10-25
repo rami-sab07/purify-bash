@@ -105,13 +105,15 @@ A temporary directory is created for storing the extracted track.
 
 ### 3. Vocals separation
 
-`audio-separator` is used for extracting the vocals stem. The model `Kim_Vocal_2.onnx` is elected, and `batch_size` is set to 4 for improving the performance. Logging is set to only errors to avoid cluttering the terminal. And only the `Vocals` stem is extracted.
+`audio-separator` is used for extracting the vocals stem. The model `Kim_Vocal_2.onnx` is elected, and `mdx_batch_size` is set to 4 for improving the performance. Logging is set to only errors to avoid cluttering the terminal. And only the `Vocals` stem is extracted.
 
 The extracted stem is stored within the temporary directory created previously.
 
 ### 4. Merging the audio track back
 
 If it was a video file, the audio is added as an additional track to the video, encoding it with a reasonable lossy compression that keeps balance between quality and size. The added audio track will be made the default for the video.
+Its title is copied from the selected original audio track with ` (Purified)`
+appended. If the original track has no title, `Audio (Purified)` is used.
 
 If it was an audio file, then the `Vocals` stem would only be re-encoded.
 
@@ -124,4 +126,6 @@ The temporarily created directory is deleted, along the temporary files it creat
 ## Extra Features
 
 - The script shall output status messages at each stage start.
+- `yt-dlp` and `ffmpeg` show compact in-place progress while processing,
+  without verbose informational logging.
 - ANSI escape sequences are used for colorizing the script status messages.
