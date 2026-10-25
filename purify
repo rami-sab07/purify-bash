@@ -9,6 +9,7 @@ readonly SUPPORTED_EXTENSIONS="avi|flac|m4a|mka|mkv|mov|mp3|mp4|mpeg|mpg|ogg|opu
 WORKSPACE=""
 SELECTED_STREAM=""
 SELECTED_STREAM_TITLE=""
+OUTPUT_TEMP=""
 
 if [[ -t 1 ]]; then
   readonly BLUE=$'\033[1;34m'
@@ -31,6 +32,7 @@ Generated files are written beside their source with a " (Purified)" suffix.
 
 Options:
   -r, --recursive  Search directories and their subdirectories.
+  -o, --override   Replace local input files after successful processing.
   -h, --help       Show this help message.
 EOF
 }
@@ -200,12 +202,17 @@ cleanup() {
     rm -rf -- "$WORKSPACE"
     WORKSPACE=""
   fi
+  if [[ -n "$OUTPUT_TEMP" && -e "$OUTPUT_TEMP" ]]; then
+    rm -f -- "$OUTPUT_TEMP"
+    OUTPUT_TEMP=""
+  fi
 }
 
 trap cleanup EXIT
 
 process_media() {
   local source=$1
+  local replace_original=$2
   local vocals output extension codec stream_number
   local -a audio_count disposition_args
 
@@ -233,7 +240,14 @@ process_media() {
     --log_level error \
     --single_stem Vocals
   vocals=$(find_vocals_stem "$WORKSPACE")
-  output=$(output_path_for "$source")
+  if [[ "$replace_original" == true ]]; then
+    output=$source
+    extension=${source##*.}
+    OUTPUT_TEMP=$(mktemp "$WORKSPACE/output.XXXXXX.$extension")
+    output=$OUTPUT_TEMP
+  else
+    output=$(output_path_for "$source")
+  fi
 
   if ffprobe -v error -select_streams v:0 -show_entries stream=index \
     -of csv=p=0 "$source" | grep -q .; then
@@ -268,13 +282,20 @@ process_media() {
       -i "$vocals" -map 0:a:0 -c:a "$codec" "$output"
   fi
 
-  printf '%sCreated %s%s\n' "$GREEN" "$output" "$RESET"
+  if [[ "$replace_original" == true ]]; then
+    mv -- "$output" "$source"
+    OUTPUT_TEMP=""
+    printf '%sReplaced %s%s\n' "$GREEN" "$source" "$RESET"
+  else
+    printf '%sCreated %s%s\n' "$GREEN" "$output" "$RESET"
+  fi
   cleanup
 }
 
 main() {
-  local input file recursive=false
-  local -a files
+  local input file recursive=false override=false
+  local -a files=()
+  declare -A replace_original=()
 
   if (($# == 0)); then
     usage >&2
@@ -288,6 +309,10 @@ main() {
         ;;
       -r|--recursive)
         recursive=true
+        shift
+        ;;
+      -o|--override)
+        override=true
         shift
         ;;
       --)
@@ -312,18 +337,24 @@ main() {
   for input in "$@"; do
     if is_url "$input"; then
       while IFS= read -r file; do
-        [[ -n "$file" ]] && files+=("$file")
+        if [[ -n "$file" ]]; then
+          files+=("$file")
+          replace_original["$file"]=true
+        fi
       done < <(download_url "$input")
     else
       while IFS= read -r file; do
-        [[ -n "$file" ]] && files+=("$file")
+        if [[ -n "$file" ]]; then
+          files+=("$file")
+          [[ "$override" == true ]] && replace_original["$file"]=true
+        fi
       done < <(collect_local_files "$input" "$recursive")
     fi
   done
 
   ((${#files[@]} > 0)) || fail "No supported media files were found."
   for file in "${files[@]}"; do
-    process_media "$file"
+    process_media "$file" "${replace_original[$file]:-false}"
   done
 }
 

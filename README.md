@@ -57,6 +57,8 @@ purify ./video-series
 purify .
 # Recursively process a directory and its subdirectories
 purify --recursive ./video-series
+# Replace local files after successful processing
+purify --override ./a-video-file.mkv
 
 # A YouTube video
 purify https://www.youtube.com/watch?v=XfeuCfOUuXg
@@ -69,6 +71,9 @@ Pass multiple files, directories, and URLs in one invocation. Directories are
 searched only at their top level by default. Use `--recursive` (or `-r`) to
 include subdirectories. Existing purified files are skipped, and if an output
 already exists, a numbered suffix is used instead of overwriting it.
+YouTube downloads are always replaced by the purified file. For local inputs,
+use `--override` (or `-o`) to replace the original after successful processing;
+without it, the purified file is written alongside the original.
 
 When a source has multiple audio tracks, `purify` displays the available
 stream indexes and prompts for the track to process.
