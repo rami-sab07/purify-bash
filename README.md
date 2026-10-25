@@ -1,35 +1,31 @@
-
 # Purify
 
-A bash script for streamlining the process of removing music from video files, YouTube videos, and audio files.
+Purify is a Bash command-line tool for reducing background music in local
+media files, YouTube videos, and YouTube playlists. It extracts the speech or
+vocal stem with `audio-separator`, then writes a purified copy beside the
+source file.
 
-## Why?
+Purify is intended for Linux users who want to make spoken-word media easier
+to listen to without manually editing each file.
 
-For the people who choose to stop listening to music, for the various reasons such as disliking their emotional effect, improving their focus, improving the quality of sleep, and others you can find by doing some research.
+## How it works
 
-In today's age, music is almost present everywhere, the majority of videos include background music, many shops play music, and so on.
+Purify combines these tools:
 
-And unfortunately, many informative and useful videos have background music, stopping watching them at all would be costly.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) downloads media from supported
+  websites.
+- [FFmpeg](https://ffmpeg.org/) and `ffprobe` extract and inspect media
+  streams, then merge the purified audio back into video.
+- [audio-separator](https://github.com/nomadkaraoke/python-audio-separator)
+  separates vocals from music using an AI model.
 
-Thus, an automated tool, for cleaning the hardly escapable media from music, would help alleviate the problem and reduce the exposure to music.
-
-## How?
-
-There is interest in computer science in the task of vocal an instrument separation, which is to separate an audio signal into the audio of vocals (containing human speech), and the audio of the instruments (containing music).
-
-At the current days, the task is solved using [deep learning](https://en.wikipedia.org/wiki/Deep_learning).
-
-One great consumable solution is [Universal Vocal Remover (UVR5)](https://github.com/anjok07/ultimatevocalremovergui), and it's cli counterpart [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) that uses the same AI models.
-
-This project provides a bash script that combines [yt-dlp](https://github.com/yt-dlp/yt-dlp), [ffmpeg](https://en.wikipedia.org/wiki/FFmpeg), and audio-separator, for streamlining the process of removing music from videos and audio.
-
-## Why a bash script?
-
-Given the limited resources I currently have, a bash script is the easiest [MVP](https://en.wikipedia.org/wiki/Minimum_viable_product) I can provide. I would love to see more cross-platform friendly, and non tech-savvy users friend solutions being made and inspired from this.
+The default model is `Kim_Vocal_2.onnx`. `audio-separator` downloads it when it
+is needed for the first time.
 
 ## Installation
 
-Clone the repository and place the script somewhere on your `PATH`:
+Purify requires Bash 4 or newer. Clone the repository and install the script
+somewhere on your `PATH`:
 
 ```sh
 git clone https://github.com/rami-sabbagh/purify-bash.git
@@ -38,9 +34,55 @@ chmod +x purify
 sudo install -m 0755 purify /usr/local/bin/purify
 ```
 
-The script requires Bash 4 or newer.
+### Install yt-dlp and audio-separator with pipx
 
-## Example Usage
+`pipx` installs each Python application in an isolated environment while still
+making its command available on your `PATH`.
+
+On Fedora:
+
+```sh
+sudo dnf install pipx
+pipx ensurepath
+```
+
+On Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install pipx
+pipx ensurepath
+```
+
+Restart your shell, or open a new terminal, then install the applications:
+
+```sh
+pipx install yt-dlp
+pipx install audio-separator
+```
+
+### Install FFmpeg
+
+On Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install ffmpeg
+```
+
+On Fedora, enable RPM Fusion if FFmpeg is not available from your configured
+repositories, then install it:
+
+```sh
+sudo dnf install \
+  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf install ffmpeg
+```
+
+The commands above provide `ffmpeg` and `ffprobe`, both of which Purify needs.
+
+## Usage
 
 ```sh
 # Local video file
@@ -51,13 +93,14 @@ purify ./a-video-file.webm
 purify ./an-audio-file.mp3
 purify ./an-audio-file.mp4
 
-# A directory of local video and/or audio files
+# A directory of local media files
 purify ./video-series
-# Files directly in the current working directory
 purify .
-# Recursively process a directory and its subdirectories
+
+# Include subdirectories
 purify --recursive ./video-series
-# Replace local files after successful processing
+
+# Replace a local file after successful processing
 purify --override ./a-video-file.mkv
 
 # A YouTube video
@@ -67,70 +110,63 @@ purify https://www.youtube.com/watch?v=XfeuCfOUuXg
 purify https://www.youtube.com/playlist?list=PLZHQObOWTQDMV832OM2s0zRjsgphR5UJR
 ```
 
-Pass multiple files, directories, and URLs in one invocation. Directories are
-searched only at their top level by default. Use `--recursive` (or `-r`) to
-include subdirectories. Existing purified files are skipped, and if an output
-already exists, a numbered suffix is used instead of overwriting it.
-YouTube downloads are always replaced by the purified file. For local inputs,
-use `--override` (or `-o`) to replace the original after successful processing;
-without it, the purified file is written alongside the original.
+You can pass multiple files, directories, and URLs in one invocation.
+Directories are searched only at their top level by default. Use `--recursive`
+or `-r` to include subdirectories.
 
-When a source has multiple audio tracks, `purify` displays the available
-stream indexes and prompts for the track to process.
+Local files are written beside their sources with a ` (Purified)` suffix.
+Existing purified files are skipped, and an available numbered suffix is used
+if the output name already exists. YouTube downloads are always replaced by
+their purified files. For local inputs, use `--override` or `-o` to replace the
+original after successful processing.
+
+When a source contains multiple audio tracks, Purify displays the available
+tracks and prompts you to choose one.
+
+## Options
+
+```text
+-r, --recursive  Search directories and their subdirectories.
+-o, --override   Replace local input files after successful processing.
+-h, --help       Show the help message.
+```
 
 ## Requirements
 
-- `yt-dlp`, `ffmpeg`, `ffprobe` and `audio-separator` must be available on path.
-- The `audio-separator` model `Kim_Vocal_2.onnx` is downloaded by
-  `audio-separator` when it is not already available.
+- Bash 4 or newer
+- `yt-dlp`
+- `ffmpeg`
+- `ffprobe`
+- `audio-separator`
 
-## Checking the Installation
+The AI model can require substantial disk space, memory, and processing time.
+Processing speed depends on the input duration and your hardware.
 
-Run the following commands to verify the script and display its command-line
-help without processing a media file:
+## Verify the installation
+
+Run these commands without processing a media file:
 
 ```sh
 bash -n purify
 purify --help
+command -v yt-dlp ffmpeg ffprobe audio-separator
 ```
 
-## Processing Pipeline
+## Processing pipeline
 
-### 1. Fetching the media file
+1. If the input is a URL, `yt-dlp` downloads it to the current directory.
+2. `ffprobe` identifies the available audio tracks. If there is more than one,
+   Purify asks which track to process.
+3. `ffmpeg` extracts the selected track to a temporary WAV file.
+4. `audio-separator` extracts the `Vocals` stem with `Kim_Vocal_2.onnx`.
+5. For video, `ffmpeg` adds the purified stem as the default audio track while
+   preserving the video stream. For audio-only files, it encodes the stem in
+   the source format when supported.
+6. Temporary files are removed when processing finishes.
 
-If the input address is a web url, then `yt-dlp` is used for downloading it locally, into the current working directory.
+## License
 
-### 2. Extracting the audio track
+Purify is released under the [MIT License](LICENSE).
 
-`ffmpeg` is used for extracting the audio track, and encoding it as a `.wav` file in preparation for consumption by `audio-separator`.
-
-If the media file contains multiple audio tracks, then the user is prompted to select which audio track to process.
-
-A temporary directory is created for storing the extracted track.
-
-### 3. Vocals separation
-
-`audio-separator` is used for extracting the vocals stem. The model `Kim_Vocal_2.onnx` is elected, and `mdx_batch_size` is set to 4 for improving the performance. Logging is set to only errors to avoid cluttering the terminal. And only the `Vocals` stem is extracted.
-
-The extracted stem is stored within the temporary directory created previously.
-
-### 4. Merging the audio track back
-
-If it was a video file, the audio is added as an additional track to the video, encoding it with a reasonable lossy compression that keeps balance between quality and size. The added audio track will be made the default for the video.
-Its title is copied from the selected original audio track with ` (Purified)`
-appended. If the original track has no title, `Audio (Purified)` is used.
-
-If it was an audio file, then the `Vocals` stem would only be re-encoded.
-
-The result file would be given the suffix ` (Purified)` in it's filename, and be stored in the same directory of the original media file.
-
-### 5. Cleanup
-
-The temporarily created directory is deleted, along the temporary files it created within it.
-
-## Extra Features
-
-- The script shall output status messages at each stage start.
-- `yt-dlp` and `ffmpeg` show compact in-place progress while processing,
-  without verbose informational logging.
-- ANSI escape sequences are used for colorizing the script status messages.
+The dependencies and AI model may have their own licenses and terms. Review
+those terms before redistributing them or media processed with them.

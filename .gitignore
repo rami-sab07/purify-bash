@@ -1,0 +1,18 @@
+# Downloaded and generated media
+* (Purified).*
+* (Purified *).*
+*.part
+*.ytdl
+
+# audio-separator model and cache files
+models/
+*.onnx
+
+# Temporary files
+.tmp/
+tmp/
+*.tmp
+*.temp
+
+# Logs
+*.log
