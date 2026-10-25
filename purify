@@ -236,9 +236,9 @@ process_media() {
   local source=$1
   local replace_original=$2
   local launch_mpv_after=$3
-  local vocals output result extension codec stream_number
+  local vocals output result extension codec stream_number duration
   local ffmpeg_log_level=warning separator_log_level=error
-  local -a audio_count disposition_args
+  local -a audio_count disposition_args separator_args
 
   [[ -f "$source" ]] || {
     printf 'Skipping missing downloaded file: %s\n' "$source" >&2
@@ -260,13 +260,21 @@ process_media() {
     "$WORKSPACE/input.wav"
 
   status "Separating vocals"
-  audio-separator "$WORKSPACE/input.wav" \
+  duration=$(ffprobe -v error -show_entries format=duration \
+    -of default=nw=1:nk=1 "$source")
+  separator_args=(
+    "$WORKSPACE/input.wav"
     --model_filename "$MODEL_NAME" \
     --output_dir "$WORKSPACE" \
     --output_format WAV \
     --mdx_batch_size 4 \
     --log_level "$separator_log_level" \
     --single_stem Vocals
+  )
+  if awk "BEGIN { exit !($duration > 2400) }"; then
+    separator_args+=(--chunk_duration 600)
+  fi
+  audio-separator "${separator_args[@]}"
   vocals=$(find_vocals_stem "$WORKSPACE")
   if [[ "$replace_original" == true ]]; then
     output=$source
