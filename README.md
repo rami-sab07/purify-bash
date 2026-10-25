@@ -103,6 +103,9 @@ purify --recursive ./video-series
 # Replace a local file after successful processing
 purify --override ./a-video-file.mkv
 
+# Open each result in MPV after successful processing
+purify --mpv ./a-video-file.mkv
+
 # A YouTube video
 purify https://www.youtube.com/watch?v=XfeuCfOUuXg
 
@@ -128,6 +131,7 @@ tracks and prompts you to choose one.
 ```text
 -r, --recursive  Search directories and their subdirectories.
 -o, --override   Replace local input files after successful processing.
+    --mpv        Open each result in MPV after successful processing.
 -h, --help       Show the help message.
 ```
 
@@ -138,6 +142,7 @@ tracks and prompts you to choose one.
 - `ffmpeg`
 - `ffprobe`
 - `audio-separator`
+- `mpv` (only required when using `--mpv`)
 
 The AI model can require substantial disk space, memory, and processing time.
 Processing speed depends on the input duration and your hardware.
