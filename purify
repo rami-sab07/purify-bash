@@ -33,7 +33,8 @@ Generated files are written beside their source with a " (Purified)" suffix.
 
 Options:
   -r, --recursive  Search directories and their subdirectories.
-  -o, --override   Replace local input files after successful processing.
+  -o, --overwrite  Replace local input files after successful processing.
+      --override   Alias for --overwrite.
   -q, --quality    Maximum video height to download (default: 720p).
   -v, --verbose    Show detailed output from each processing stage.
       --mpv        Open each result in MPV after successful processing.
@@ -306,8 +307,8 @@ process_media() {
     status "Merging purified audio into video"
     ffmpeg -hide_banner -loglevel "$ffmpeg_log_level" -stats -y \
       -i "$source" -i "$vocals" \
-      -map 0:v? -map 0:a? -map 1:a:0 \
-      -map_metadata 0 -c:v copy -c:a "$codec" -b:a 192k \
+      -map 0:v? -map 0:a? -map 0:s? -map 1:a:0 \
+      -map_metadata 0 -c:v copy -c:a "$codec" -c:s copy -b:a 192k \
       "${disposition_args[@]}" \
       -metadata:s:a:"${#audio_count[@]}" "title=${SELECTED_STREAM_TITLE} (Purified)" \
       "$output"
@@ -332,7 +333,7 @@ process_media() {
 }
 
 main() {
-  local input file quality=720 recursive=false override=false launch_mpv_after=false
+  local input file quality=720 recursive=false overwrite=false launch_mpv_after=false
   local -a files=()
   declare -A replace_original=()
 
@@ -350,8 +351,8 @@ main() {
         recursive=true
         shift
         ;;
-      -o|--override)
-        override=true
+      -o|--overwrite|--override)
+        overwrite=true
         shift
         ;;
       -q|--quality)
@@ -405,7 +406,7 @@ main() {
       while IFS= read -r file; do
         if [[ -n "$file" ]]; then
           files+=("$file")
-          [[ "$override" == true ]] && replace_original["$file"]=true
+          [[ "$overwrite" == true ]] && replace_original["$file"]=true
         fi
       done < <(collect_local_files "$input" "$recursive")
     fi

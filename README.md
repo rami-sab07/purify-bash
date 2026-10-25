@@ -101,7 +101,7 @@ purify .
 purify --recursive ./video-series
 
 # Replace a local file after successful processing
-purify --override ./a-video-file.mkv
+purify --overwrite ./a-video-file.mkv
 
 # Open each result in MPV after successful processing
 purify --mpv ./a-video-file.mkv
@@ -123,8 +123,9 @@ or `-r` to include subdirectories.
 Local files are written beside their sources with a ` (Purified)` suffix.
 Existing purified files are skipped, and an available numbered suffix is used
 if the output name already exists. YouTube downloads are always replaced by
-their purified files. For local inputs, use `--override` or `-o` to replace the
-original after successful processing.
+their purified files. For local inputs, use `--overwrite` or `-o` to replace
+the original after successful processing. `--override` is accepted as an alias
+for `--overwrite`.
 
 When a source contains multiple audio tracks, Purify displays the available
 tracks and prompts you to choose one.
@@ -133,7 +134,8 @@ tracks and prompts you to choose one.
 
 ```text
 -r, --recursive  Search directories and their subdirectories.
--o, --override   Replace local input files after successful processing.
+-o, --overwrite  Replace local input files after successful processing.
+    --override   Alias for --overwrite.
 -q, --quality    Maximum video height to download (default: 720p).
 -v, --verbose    Show detailed output from each processing stage.
     --mpv        Open each result in MPV after successful processing.
@@ -170,8 +172,8 @@ command -v yt-dlp ffmpeg ffprobe audio-separator
 3. `ffmpeg` extracts the selected track to a temporary WAV file.
 4. `audio-separator` extracts the `Vocals` stem with `Kim_Vocal_2.onnx`.
 5. For video, `ffmpeg` adds the purified stem as the default audio track while
-   preserving the video stream. For audio-only files, it encodes the stem in
-   the source format when supported.
+    preserving the video and subtitle streams. For audio-only files, it encodes
+    the stem in the source format when supported.
 6. Temporary files are removed when processing finishes.
 
 ## License
